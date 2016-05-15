@@ -10,20 +10,16 @@ import (
 	"github.com/kavehmz/crdt"
 )
 
-/*QSet is a race free implementation of what LWW can use as udnerlying set.
-This implementation uses redis ZSET.
-ZSET in redis uses scores to sort the elements. Score is a IEEE 754 floating point number,
-that is able to represent precisely integer numbers between -(2^53) and +(2^53) included.
-That is between -9007199254740992 and 9007199254740992.
-This will limit this sets precision to save element's action timestamp to 1 milli-seconds.
-Notice that time.Time precision is 1 nano-seconds by defaults. For this lack of precision all
-timestamps are rounded to nearest microsecond.
-Using redis can also cause latency cause by network or socket communication.
+/*QSet a implementation of TimedSet for LWW that used Redis as its persistence later but Maps for operations.
+This mix will make it about 100 times faster than original RedisSet.
+This implementatin will have more memory foot print handle some operation in a non-blocking way.
+
+Init function will initialize the internal map from redis. Also it will subscribe to a channel with the same name as SetKey to get the new changes and it will apply them to the map.
 */
 type QSet struct {
 	// Conn is the redis connection to be used.
 	Conn redis.Conn
-	// AddSet sets which key will be used in redis for the set.
+	// SetSet sets which key will be used in redis for the set.
 	SetKey string
 	// Marshal function needs to convert the lww.Element to string. Redis can only store and retrieve string values.
 	Marshal func(lww.Element) string
