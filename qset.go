@@ -34,8 +34,6 @@ type QSet struct {
 
 	set lww.Set
 	sync.RWMutex
-
-	setChannel chan setData
 }
 
 type setData struct {
@@ -78,19 +76,6 @@ func (s *QSet) Init() {
 
 	s.set.Init()
 	s.readMembers()
-	s.setChannel = make(chan setData, 10000)
-	go func() {
-		for {
-			select {
-			case d := <-s.setChannel:
-				s.Lock()
-				defer s.Unlock()
-				_, err := s.Conn.Do("ZADD", s.SetKey, roundToMicro(d.ts), s.Marshal(d.element))
-				s.checkErr(err)
-			}
-		}
-
-	}()
 }
 
 func (s *QSet) readMembers() {
@@ -105,7 +90,7 @@ func (s *QSet) readMembers() {
 //Set adds an element to the set if it does not exists. It it exists Set will update the provided timestamp.
 func (s *QSet) Set(e lww.Element, t time.Time) {
 	s.set.Set(s.Marshal(e), t.Round(time.Microsecond))
-	// s.setChannel <- setData{ts: t.Round(time.Microsecond), element: e}
+
 	go func() {
 		s.Lock()
 		defer s.Unlock()
