@@ -2,6 +2,7 @@ package qset
 
 import (
 	"errors"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -10,30 +11,46 @@ import (
 	"github.com/kavehmz/crdt"
 )
 
-/*QSet a implementation of TimedSet for LWW that used Redis as its persistence later but Maps for operations.
-This mix will make it about 100 times faster than original RedisSet.
-This implementatin will have more memory foot print handle some operation in a non-blocking way.
+/*QSet is an implementation of what LWW (lww.LWW) can use as udnerlying set.
+It is for https://github.com/kavehmz/lww.
 
-Init function will initialize the internal map from redis. Also it will subscribe to a channel with the same name as SetKey to get the new changes and it will apply them to the map.
+This implementation merges two approached which are implemented in lww repositories to gain both speed and persistence at the same time.
+
+It introduced a new udnerlying structre which each Set will add the element to a Go map (fast part) and write the element in redis in an async way (using ConnWrite connection). It will also publish the elemnet to a channel in redis with the same name as SetKey.
+
+It also subscribes to redis to a channel which the same name as SetKey (using ConnSub connection). Everytime this or any other process publishes a new element this will update the internal map. This way it keeps the internal map up-to-date.
+
+Converting data strcuture is done using Marshal and UnMarshal functions which must be provider by the user.
+
+This implementation has the same time resolution limit as RedisSet that is minimum 1 millisecond.
 */
 type QSet struct {
-	// Conn is the redis connection to be used.
-	Conn redis.Conn
-	// SetSet sets which key will be used in redis for the set.
+	// ConnWrite is the redis connection to be used for write elements to redis. This can be for example one master server.
+	ConnWrite redis.Conn
+	// ConnWrite is the redis connection to be used for subscribing to element notificatinos. This can be for example the local redis replica.
+	ConnSub redis.Conn
+	// AddSet sets which key will be used in redis for the set.
 	SetKey string
-	// Marshal function needs to convert the lww.Element to string. Redis can only store and retrieve string values.
-	Marshal func(lww.Element) string
+	// Marshal function needs to convert the element to string. Redis can only store and retrieve string values.
+	Marshal func(interface{}) string
 	// UnMarshal function needs to be able to convert a Marshalled string back to a readable structure for consumer of library.
-	UnMarshal func(string) lww.Element
+	UnMarshal func(string) interface{}
 	// LastState is an error type that will return the error state of last executed redis command. Add redis connection are not shareable this can be used after each command to know the last state.
 	LastState error
 
-	set lww.Set
-	sync.RWMutex
+	set   lww.Set
+	queue sync.WaitGroup
+
+	setChannel chan setData
+	sync       chan bool
+	quit       chan bool
+
+	QueueMax  int
+	setScript *redis.Script
 }
 
 type setData struct {
-	element lww.Element
+	element interface{}
 	ts      time.Time
 }
 
@@ -49,10 +66,25 @@ func (s *QSet) checkErr(err error) {
 	s.LastState = nil
 }
 
+const updateToLatestAndPublishInRedis string = `
+local c = tonumber(redis.call('ZSCORE', KEYS[1], ARGV[2]))
+if not c or tonumber(ARGV[1]) > c then
+	redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
+	redis.call('PUBLISH', KEYS[1], ARGV[1] .. ":" .. ARGV[2])
+	return tonumber(ARGV[2])
+else
+	return 0
+end
+`
+
 //Init will do a one time setup for underlying set. It will be called from WLL.Init
 func (s *QSet) Init() {
-	if s.Conn == nil {
-		s.checkErr(errors.New("Conn must be set"))
+	if s.ConnWrite == nil {
+		s.checkErr(errors.New("ConnWrite must be set"))
+		return
+	}
+	if s.ConnSub == nil {
+		s.checkErr(errors.New("ConnSub must be set"))
 		return
 	}
 	if s.Marshal == nil {
@@ -67,15 +99,55 @@ func (s *QSet) Init() {
 		s.checkErr(errors.New("SetKey must be set"))
 		return
 	}
-	_, err := s.Conn.Do("DEL", s.SetKey)
-	s.checkErr(err)
 
 	s.set.Init()
 	s.readMembers()
+	if s.QueueMax == 0 {
+		s.QueueMax = 100000
+	}
+	s.setChannel = make(chan setData, s.QueueMax)
+	s.sync = make(chan bool)
+	s.quit = make(chan bool)
+
+	//This Lua function will do a __atomic__ check and set of timestamp only in incremental way.
+	s.setScript = redis.NewScript(1, updateToLatestAndPublishInRedis)
+
+	go s.writeLoop()
+	go s.listenLoop()
+}
+
+func (s *QSet) listenLoop() {
+	psc := redis.PubSubConn{Conn: s.ConnSub}
+	psc.Subscribe(s.SetKey)
+	r := regexp.MustCompile(":")
+	for {
+		switch n := psc.Receive().(type) {
+		case redis.Message:
+			e := r.Split(string(n.Data), 2)
+			tms, _ := strconv.Atoi(e[0])
+			s.set.Set(s.Marshal(e[1]), time.Unix(int64(tms/1000000), int64(tms%1000000)))
+		case error:
+			s.checkErr(n)
+			return
+		}
+	}
+}
+
+func (s *QSet) writeLoop() {
+	for {
+		select {
+		case d := <-s.setChannel:
+			_, err := s.setScript.Do(s.ConnWrite, s.SetKey, roundToMicro(d.ts), s.Marshal(d.element))
+			s.queue.Done()
+			s.checkErr(err)
+		case <-s.quit:
+			return
+		}
+	}
 }
 
 func (s *QSet) readMembers() {
-	zs, err := redis.Strings(s.Conn.Do("ZRANGE", s.SetKey, 0, -1, "WITHSCORES"))
+	zs, err := redis.Strings(s.ConnWrite.Do("ZRANGE", s.SetKey, 0, -1, "WITHSCORES"))
 	s.checkErr(err)
 	for i := 0; i < len(zs); i += 2 {
 		n, _ := strconv.Atoi(zs[i+1])
@@ -83,16 +155,21 @@ func (s *QSet) readMembers() {
 	}
 }
 
-//Set adds an element to the set if it does not exists. It it exists Set will update the provided timestamp.
-func (s *QSet) Set(e lww.Element, t time.Time) {
-	s.set.Set(s.Marshal(e), t.Round(time.Microsecond))
+//Quit will end the write loop (Goroutine). This exist to be call at the end of Qset life to close the Goroutine to avoid memory leakage.
+func (s *QSet) Quit() {
+	s.quit <- true
+}
 
-	go func() {
-		s.Lock()
-		defer s.Unlock()
-		_, err := s.Conn.Do("ZADD", s.SetKey, roundToMicro(t), s.Marshal(e))
-		s.checkErr(err)
-	}()
+//Sync will block the call until redis queue is empty and all writes are done
+func (s *QSet) Sync() {
+	s.queue.Wait()
+}
+
+//Set adds an element to the set if it does not exists. If it exists Set will update the provided timestamp. It also publishes the change into redis at SetKey channel.
+func (s *QSet) Set(e interface{}, t time.Time) {
+	s.set.Set(s.Marshal(e), t.Round(time.Microsecond))
+	s.queue.Add(1)
+	s.setChannel <- setData{ts: t.Round(time.Microsecond), element: e}
 }
 
 //Len must return the number of members in the set
@@ -101,15 +178,14 @@ func (s *QSet) Len() int {
 }
 
 //Get returns timestmap of the element in the set if it exists and true. Otherwise it will return an empty timestamp and false.
-func (s *QSet) Get(e lww.Element) (time.Time, bool) {
+func (s *QSet) Get(e interface{}) (time.Time, bool) {
 	return s.set.Get(e)
 }
 
 //List returns list of all elements in the set
-func (s *QSet) List() []lww.Element {
-	var l []lww.Element
+func (s *QSet) List() []interface{} {
+	var l []interface{}
 	for _, v := range s.set.List() {
-
 		l = append(l, s.UnMarshal(v.(string)))
 	}
 	return l

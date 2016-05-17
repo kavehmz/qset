@@ -10,9 +10,11 @@ import (
 
 func TestQSet_integration(t *testing.T) {
 	var ac redis.Conn
+	var asc redis.Conn
 	var rc redis.Conn
-	add := setupSet(t, &ac, "TESTADD")
-	remove := setupSet(t, &rc, "TESTREMOVE")
+	var rsc redis.Conn
+	add := setupSet(t, &ac, &asc, "TESTADD")
+	remove := setupSet(t, &rc, &rsc, "TESTREMOVE")
 
 	lww := lww.LWW{AddSet: add, RemoveSet: remove}
 	lww.Init()
