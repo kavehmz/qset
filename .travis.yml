@@ -1,0 +1,14 @@
+language: go
+go:
+  - tip
+services:
+  - redis-server
+env:
+  - secure: "Ps4Rw54CJupO05W8oOFDlzagshiWmb0QMHT8JOXIoclF6G9kMESq6qYgxgOF+ZNYmBDogXgoXTaSxt+bOtmJ7YV58GGYy6SFNFgBb1rhEVp9YgI5Clh/+ORPqHjAUaV93FTsecgs5gKVclkiS8u93jj0upmOGhc1kguYBYcqWajXv7UYH7WyJDjwnId63NF7nlBk6wVK+GI6b6HTwZR4Fx3mi2flxzzMCU9rXLijB4gd03wf5VFMSd+ompTvK6W2B4cB75Qw5H2wvt0ExzlM5lf3TWcluW5mp9rGzKBKKwY5B5bnL33Enq5Y9SMW7iICNDVtQ3doiAS+rXnrV/3QQ/wuzgcdBkVeLNq7KOtHeFtukvrLeJ4DLHqQRRv41J35ZPp6uiiQa9FsFpOZUytkGufpeDxi+bsBSustTdDg9eGxJKGWjy20H40bq5s20A83d0fYp9iD1Rbyjw7KUB1SsHKnftg/1umAlO2maOvDt19/TznnnC4b4ypnRPv1pai10PHjsdTGnDWFYveIicMamtU61PZ8q5fXL/sRTezHn3mH4f+X+Ivl+2Ssu58Z9gIuTPmYNON9XCAadb0UFwtJ+PhJWP9X5jzN5Gf7TPUqV+FUTXbEORPKCyu0GDk3su/fO59s4A3apfzdAHiTn974ofhsNvEFQ8Axy/GeCupKSKA="
+before_install:
+  - go get golang.org/x/tools/cmd/cover
+  - go get github.com/mattn/goveralls
+
+script:
+    - go test -v --race -covermode=count -coverprofile=coverage.out -benchmem -bench .
+    - $HOME/gopath/bin/goveralls -coverprofile=coverage.out -service=travis-ci -repotoken $COVERALLS_TOKEN

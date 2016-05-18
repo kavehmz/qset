@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/kavehmz/crdt"
+	"github.com/kavehmz/crdt/integrate"
 )
 
 func TestQSet_integration(t *testing.T) {
@@ -15,5 +15,5 @@ func TestQSet_integration(t *testing.T) {
 	add := setupSet(t, &ac, &asc, "TESTADD")
 	remove := setupSet(t, &rc, &rsc, "TESTREMOVE")
 
-	lww.IntegrationTest(add, remove, t)
+	integrate.IntegrationTest(add, remove, t)
 }
