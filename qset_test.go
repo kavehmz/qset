@@ -12,7 +12,7 @@ import (
 func TestQSet_init(t *testing.T) {
 	s0 := QSet{}
 	s0.Init()
-	if s0.LastState == nil {
+	if s0.LastState() == nil {
 		t.Error("No error for missing params")
 	}
 
@@ -74,14 +74,11 @@ func TestQSet_listenLoop(t *testing.T) {
 
 	s.psc.Close()
 	time.Sleep(time.Millisecond * 100)
-	if s.LastState == nil {
+	if s.LastState() == nil {
 		t.Error("Closing connection did not cause error in listenLoop")
 	}
 }
-
-func setupSet(t interface {
-	Error(...interface{})
-}, r *redis.Conn, rs *redis.Conn, key string) *QSet {
+func setupSetNoInit(t testing.TB, r *redis.Conn, rs *redis.Conn, key string) *QSet {
 	c1, err := redis.Dial("tcp", "localhost:6379")
 	r = &c1
 	if err != nil {
@@ -94,8 +91,13 @@ func setupSet(t interface {
 		t.Error("Can't setup redis for tests", err)
 	}
 	s := QSet{ConnWrite: *r, ConnSub: *rs, Marshal: func(e interface{}) string { return e.(string) }, UnMarshal: func(e string) interface{} { return e }, SetKey: key}
-	s.Init()
 	return &s
+}
+
+func setupSet(t testing.TB, r *redis.Conn, rs *redis.Conn, key string) *QSet {
+	s := setupSetNoInit(t, r, rs, key)
+	s.Init()
+	return s
 }
 
 func TestQSet(t *testing.T) {

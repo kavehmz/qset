@@ -36,10 +36,11 @@ type QSet struct {
 	// UnMarshal function needs to be able to convert a Marshalled string back to a readable structure for consumer of library.
 	UnMarshal func(string) interface{}
 	// LastState is an error type that will return the error state of last executed redis command. Add redis connection are not shareable this can be used after each command to know the last state.
-	LastState error
+	lastState error
 
 	set   lww.Set
 	queue sync.WaitGroup
+	sync.RWMutex
 
 	setChannel chan setData
 	sync       chan bool
@@ -60,11 +61,21 @@ func roundToMicro(t time.Time) int64 {
 }
 
 func (s *QSet) checkErr(err error) {
+	s.Lock()
 	if err != nil {
-		s.LastState = err
+		s.lastState = err
+		s.Unlock()
 		return
 	}
-	s.LastState = nil
+	s.Unlock()
+	s.lastState = nil
+}
+
+func (s *QSet) LastState() error {
+	s.Lock()
+	st := s.lastState
+	s.Unlock()
+	return st
 }
 
 const updateToLatestAndPublishInRedis string = `
@@ -126,7 +137,10 @@ func (s *QSet) checkInitParams() bool {
 
 func (s *QSet) listenLoop() {
 	s.psc = redis.PubSubConn{Conn: s.ConnSub}
+	s.Lock()
 	s.psc.Subscribe(s.SetKey)
+	s.Unlock()
+
 	r := regexp.MustCompile(":")
 	for {
 		switch n := s.psc.Receive().(type) {
@@ -170,7 +184,9 @@ func (s *QSet) readMembers() {
 //Quit will end the write loop (Goroutine). This exist to be call at the end of Qset life to close the Goroutine to avoid memory leakage.
 func (s *QSet) Quit() {
 	s.quit <- true
+	s.Lock()
 	s.psc.Unsubscribe(s.SetKey)
+	s.Unlock()
 }
 
 //Sync will block the call until redis queue is empty and all writes are done
