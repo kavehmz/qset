@@ -210,8 +210,9 @@ func BenchmarkQSet_get(b *testing.B) {
 }
 
 func ExampleQSet() {
-	c, _ := redis.Dial("tcp", "localhost:6379")
-	s := QSet{ConnWrite: c, Marshal: func(e interface{}) string { return e.(string) }, UnMarshal: func(e string) interface{} { return e }, SetKey: "TESTKEY"}
+	connWrite, _ := redis.Dial("tcp", "localhost:6379")
+	connSub, _ := redis.Dial("tcp", "localhost:6379")
+	s := QSet{ConnWrite: connWrite, ConnSub: connSub, Marshal: func(e interface{}) string { return e.(string) }, UnMarshal: func(e string) interface{} { return e }, SetKey: "TESTKEY"}
 	defer s.Quit()
 
 	s.Init()
