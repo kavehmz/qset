@@ -47,6 +47,7 @@ type QSet struct {
 
 	QueueMax  int
 	setScript *redis.Script
+	psc       redis.PubSubConn
 }
 
 type setData struct {
@@ -79,24 +80,7 @@ end
 
 //Init will do a one time setup for underlying set. It will be called from WLL.Init
 func (s *QSet) Init() {
-	if s.ConnWrite == nil {
-		s.checkErr(errors.New("ConnWrite must be set"))
-		return
-	}
-	if s.ConnSub == nil {
-		s.checkErr(errors.New("ConnSub must be set"))
-		return
-	}
-	if s.Marshal == nil {
-		s.checkErr(errors.New("Marshal must be set"))
-		return
-	}
-	if s.UnMarshal == nil {
-		s.checkErr(errors.New("UnMarshal must be set"))
-		return
-	}
-	if s.SetKey == "" {
-		s.checkErr(errors.New("SetKey must be set"))
+	if !s.checkInitParams() {
 		return
 	}
 
@@ -116,16 +100,44 @@ func (s *QSet) Init() {
 	go s.listenLoop()
 }
 
+func (s *QSet) checkInitParams() bool {
+	if s.ConnWrite == nil {
+		s.checkErr(errors.New("ConnWrite must be set"))
+		return false
+	}
+	if s.ConnSub == nil {
+		s.checkErr(errors.New("ConnSub must be set"))
+		return false
+	}
+	if s.Marshal == nil {
+		s.checkErr(errors.New("Marshal must be set"))
+		return false
+	}
+	if s.UnMarshal == nil {
+		s.checkErr(errors.New("UnMarshal must be set"))
+		return false
+	}
+	if s.SetKey == "" {
+		s.checkErr(errors.New("SetKey must be set"))
+		return false
+	}
+	return true
+}
+
 func (s *QSet) listenLoop() {
-	psc := redis.PubSubConn{Conn: s.ConnSub}
-	psc.Subscribe(s.SetKey)
+	s.psc = redis.PubSubConn{Conn: s.ConnSub}
+	s.psc.Subscribe(s.SetKey)
 	r := regexp.MustCompile(":")
 	for {
-		switch n := psc.Receive().(type) {
+		switch n := s.psc.Receive().(type) {
 		case redis.Message:
 			e := r.Split(string(n.Data), 2)
 			tms, _ := strconv.Atoi(e[0])
 			s.set.Set(s.Marshal(e[1]), time.Unix(int64(tms/1000000), int64(tms%1000000)))
+		case redis.Subscription:
+			if n.Count == 0 {
+				return
+			}
 		case error:
 			s.checkErr(n)
 			return
@@ -158,6 +170,7 @@ func (s *QSet) readMembers() {
 //Quit will end the write loop (Goroutine). This exist to be call at the end of Qset life to close the Goroutine to avoid memory leakage.
 func (s *QSet) Quit() {
 	s.quit <- true
+	s.psc.Unsubscribe(s.SetKey)
 }
 
 //Sync will block the call until redis queue is empty and all writes are done

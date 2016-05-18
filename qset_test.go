@@ -10,46 +10,46 @@ import (
 )
 
 func TestQSet_init(t *testing.T) {
-	r, _ := redis.Dial("tcp", ":6379")
-	rs, _ := redis.Dial("tcp", ":6379")
 	s0 := QSet{}
 	s0.Init()
 	if s0.LastState == nil {
 		t.Error("No error for missing params")
 	}
 
+	r, _ := redis.Dial("tcp", ":6379")
+	rs, _ := redis.Dial("tcp", ":6379")
+
 	s1 := QSet{ConnWrite: r}
-	s1.Init()
-	if s1.LastState == nil {
+	if s1.checkInitParams() {
 		t.Error("No error for missing params")
 	}
 
 	s2 := QSet{ConnWrite: r, ConnSub: rs}
-	s2.Init()
-	if s2.LastState == nil {
+	if s2.checkInitParams() {
 		t.Error("No error for missing params")
 	}
 
 	s3 := QSet{ConnWrite: r, ConnSub: rs, Marshal: func(e interface{}) string { return e.(string) }}
-	s3.Init()
-	if s3.LastState == nil {
+	if s3.checkInitParams() {
 		t.Error("No error for missing params")
 	}
 
 	s4 := QSet{ConnWrite: r, ConnSub: rs, Marshal: func(e interface{}) string { return e.(string) }, UnMarshal: func(e string) interface{} { return e }}
-	s4.Init()
-	if s4.LastState == nil {
+	if s4.checkInitParams() {
 		t.Error("No error for missing params")
 	}
 
 	s5 := QSet{ConnWrite: r, ConnSub: rs, Marshal: func(e interface{}) string { return e.(string) }, UnMarshal: func(e string) interface{} { return e }, SetKey: "TESTKEY"}
 	s5.Init()
-	if s5.LastState != nil {
+	if !s5.checkInitParams() {
 		t.Error("Error raised when all params are present and correct")
 	}
 	s5.Set("test", time.Now())
 	s5.Sync()
+	s5.Quit()
 
+	r, _ = redis.Dial("tcp", ":6379")
+	rs, _ = redis.Dial("tcp", ":6379")
 	s6 := QSet{ConnWrite: r, ConnSub: rs, Marshal: func(e interface{}) string { return e.(string) }, UnMarshal: func(e string) interface{} { return e }, SetKey: "TESTKEY"}
 	s6.Init()
 	if s6.Len() == 0 {
@@ -72,6 +72,11 @@ func TestQSet_listenLoop(t *testing.T) {
 		t.Error("Was not able to get data by subscribing")
 	}
 
+	s.psc.Close()
+	time.Sleep(time.Millisecond * 100)
+	if s.LastState == nil {
+		t.Error("Closing connection did not cause error in listenLoop")
+	}
 }
 
 func setupSet(t interface {
