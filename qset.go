@@ -35,11 +35,11 @@ type QSet struct {
 	Marshal func(interface{}) string
 	// UnMarshal function needs to be able to convert a Marshalled string back to a readable structure for consumer of library.
 	UnMarshal func(string) interface{}
-	// LastState is an error type that will return the error state of last executed redis command. Add redis connection are not shareable this can be used after each command to know the last state.
+
 	lastState error
 
-	set   lww.Set
-	queue sync.WaitGroup
+	set lww.Set
+	sync.WaitGroup
 	sync.RWMutex
 
 	setChannel chan setData
@@ -71,6 +71,7 @@ func (s *QSet) checkErr(err error) {
 	s.lastState = nil
 }
 
+// LastState is an error type that will return the error state of last executed redis command. Add redis connection are not shareable this can be used after each command to know the last state.
 func (s *QSet) LastState() error {
 	s.Lock()
 	st := s.lastState
@@ -163,9 +164,8 @@ func (s *QSet) writeLoop() {
 	for {
 		select {
 		case d := <-s.setChannel:
-			_, err := s.setScript.Do(s.ConnWrite, s.SetKey, roundToMicro(d.ts), s.Marshal(d.element))
-			s.queue.Done()
-			s.checkErr(err)
+			s.setScript.Do(s.ConnWrite, s.SetKey, roundToMicro(d.ts), s.Marshal(d.element))
+			s.Done()
 		case <-s.quit:
 			return
 		}
@@ -191,13 +191,13 @@ func (s *QSet) Quit() {
 
 //Sync will block the call until redis queue is empty and all writes are done
 func (s *QSet) Sync() {
-	s.queue.Wait()
+	s.Wait()
 }
 
 //Set adds an element to the set if it does not exists. If it exists Set will update the provided timestamp. It also publishes the change into redis at SetKey channel.
 func (s *QSet) Set(e interface{}, t time.Time) {
 	s.set.Set(s.Marshal(e), t.Round(time.Microsecond))
-	s.queue.Add(1)
+	s.Add(1)
 	s.setChannel <- setData{ts: t.Round(time.Microsecond), element: e}
 }
 
