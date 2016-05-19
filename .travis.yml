@@ -10,5 +10,5 @@ before_install:
   - go get github.com/mattn/goveralls
 
 script:
-    - go test -v --race -covermode=count -coverprofile=coverage.out -benchmem -bench .
+    - go test -v --race -covermode=atomic -coverprofile=coverage.out -benchmem -bench .
     - $HOME/gopath/bin/goveralls -coverprofile=coverage.out -service=travis-ci -repotoken $COVERALLS_TOKEN
