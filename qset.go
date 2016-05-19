@@ -18,7 +18,7 @@ This implementation merges two approached which are implemented in lww repositor
 
 It introduced a new udnerlying structre which each Set will add the element to a Go map (fast part) and write the element in redis in an async way (using ConnWrite connection). It will also publish the elemnet to a channel in redis with the same name as SetKey.
 
-It also subscribes to redis to a channel which the same name as SetKey (using ConnSub connection). Everytime this or any other process publishes a new element this will update the internal map. This way it keeps the internal map up-to-date.
+It also subscribes to redis to a channel which the same name as SetKey (using ConnSub connection). Every time this or any other process publishes a new element this will update the internal map. This way it keeps the internal map up-to-date.
 
 Converting data strcuture is done using Marshal and UnMarshal functions which must be provider by the user.
 
