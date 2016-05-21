@@ -6,10 +6,13 @@ It introduced a new underlying structure which each Set will add the element to 
 
 the flow after start is like:
 
-- Subscribe to redis channel to get the latest changes and update the internal map.
-- Read the persistent data from Redis. Because subscription to channel started first we dont miss the changes during this step.
-- Set: Add the element to internal map and at the same time to redis and redis channel for other nodes to get the change.
-- Get/Len/List: Only check the internal maps for asnwer.
+  - Subscribe to redis channel to get the latest changes and update the internal map.
+  - Read the persistent data from Redis. Because subscription to channel started first we dont miss the changes during this step.
+  - Set: Add the element to internal map and at the same time to redis and redis channel for other nodes to get the change.
+  - Get/Len/List: Only check the internal maps for asnwer.
+
+Accessing data from redis has a time latency of about 50x more than accessing data from internal maps.
+This mix of two methods can increase the access speed for mostly read system.
 
 Converting data structure is done using Marshal and UnMarshal functions which must be provider by the user.
 
