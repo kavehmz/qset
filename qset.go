@@ -1,3 +1,20 @@
+/*Package qset is an implementation of what LWW (https://github.com/kavehmz/lww) can use as its underlying set to provide a conflict-free replicated data type.
+
+This implementation merges two approaches which are implemented in lww repositories to gain both speed and persistence at the same time.
+
+It introduced a new underlying structure which each Set will add the element to a Go map (fast part) and write the element in redis in an async way. It will also publish the element to a channel in redis.
+
+the flow after start is like:
+
+- Subscribe to redis channel to get the latest changes and update the internal map.
+- Read the persistent data from Redis. Because subscription to channel started first we dont miss the changes during this step.
+- Set: Add the element to internal map and at the same time to redis and redis channel for other nodes to get the change.
+- Get/Len/List: Only check the internal maps for asnwer.
+
+Converting data structure is done using Marshal and UnMarshal functions which must be provider by the user.
+
+This implementation has the same time resolution limit as RedisSet that is minimum 1 millisecond.
+*/
 package qset
 
 import (
@@ -11,25 +28,16 @@ import (
 	"github.com/kavehmz/crdt"
 )
 
-/*QSet is an implementation of what LWW (lww.LWW) can use as udnerlying set.
-It is for https://github.com/kavehmz/lww.
+/*QSet structure defines the structure connects to Redis and needs two connections one for read and wriet and one for subscribing to channel.
 
-This implementation merges two approaches which are implemented in lww repositories to gain both speed and persistence at the same time.
-
-It introduced a new underlying structure which each Set will add the element to a Go map (fast part) and write the element in redis in an async way (using ConnWrite connection). It will also publish the element to a channel in redis with the same name as SetKey.
-
-It also subscribes to redis to a channel which the same name as SetKey (using ConnSub connection). Every time this or any other process publishes a new element this will update the internal map. This way it keeps the internal map up-to-date.
-
-Converting data structure is done using Marshal and UnMarshal functions which must be provider by the user.
-
-This implementation has the same time resolution limit as RedisSet that is minimum 1 millisecond.
+QSet can only store data which is acceptable both as map key in Go and key name in Redis. Marshal function needs to make sure if this based on user data. UnMarshal must be able to convert the stored data back to a format that is usable by user.
 */
 type QSet struct {
 	// ConnWrite is the redis connection to be used for write elements to redis. This can be for example one master server.
 	ConnWrite redis.Conn
 	// ConnWrite is the redis connection to be used for subscribing to element notificatinos. This can be for example the local redis replica.
 	ConnSub redis.Conn
-	// AddSet sets which key will be used in redis for the set.
+	// AddSet sets which key will be used in redis for the set. Change will be also published in the channel with the same name.
 	SetKey string
 	// Marshal function needs to convert the element to string. Redis can only store and retrieve string values.
 	Marshal func(interface{}) string
