@@ -97,6 +97,8 @@ func (s *QSet) Init() {
 	}
 
 	s.set.Init()
+	go s.listenLoop()
+
 	s.readMembers()
 	if s.QueueMax == 0 {
 		s.QueueMax = 100000
@@ -109,7 +111,6 @@ func (s *QSet) Init() {
 	s.setScript = redis.NewScript(1, updateToLatestAndPublishInRedis)
 
 	go s.writeLoop()
-	go s.listenLoop()
 }
 
 func (s *QSet) checkInitParams() bool {
