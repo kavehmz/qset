@@ -28,7 +28,7 @@ import (
 	"github.com/kavehmz/crdt"
 )
 
-/*QSet structure defines the structure connects to Redis and needs two connections one for read and wriet and one for subscribing to channel.
+/*QSet structure defines the structure connects to Redis and needs two connections one for read and write and one for subscribing to channel.
 
 QSet can only store data which is acceptable both as map key in Go and key name in Redis. Marshal function needs to make sure if this based on user data. UnMarshal must be able to convert the stored data back to a format that is usable by user.
 */
