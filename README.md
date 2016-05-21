@@ -7,19 +7,19 @@
 
 
 # qset
-An underlying for LWW data structure. It is both fast and persistent.
 
-It is an underlying set design for [LWW](https://godoc.org/github.com/kavehmz/qset)
-
-QSet is an implementation of what LWW (lww.LWW) can use as udnerlying set.
-
-It is for https://github.com/kavehmz/lww.
+QSet is an implementation of what [LWW](https://github.com/kavehmz/lww) can use as its underlying set to provide a conflict-free replicated data type.
 
 This implementation merges two approaches which are implemented in lww repositories to gain both speed and persistence at the same time.
 
-It introduced a new underlying structure which each Set will add the element to a Go map (fast part) and write the element in redis in an async way (using ConnWrite connection). It will also publish the element to a channel in redis with the same name as SetKey.
+It introduced a new underlying structure which each Set will add the element to a Go map (fast part) and write the element in redis in an async way. It will also publish the element to a channel in redis.
 
-It also subscribes to redis to a channel which the same name as SetKey (using ConnSub connection). Every time this or any other process publishes a new element this will update the internal map. This way it keeps the internal map up-to-date.
+the flow after start is like:
+
+- Subscribe to redis channel to get the latest changes and update the internal map.
+- Read the persistent data from Redis. Because subscription to channel started first we dont miss the changes during this step.
+- Set: Add the element to internal map and at the same time to redis and redis channel for other nodes to get the change.
+- Get/Len/List: Only check the internal maps for asnwer.
 
 Converting data structure is done using Marshal and UnMarshal functions which must be provider by the user.
 
