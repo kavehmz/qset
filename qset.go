@@ -17,6 +17,7 @@ This mix of two methods can increase the access speed for mostly read system.
 Converting data structure is done using Marshal and UnMarshal functions which must be provider by the user.
 
 This implementation has the same time resolution limit as RedisSet that is minimum 1 millisecond.
+
 */
 package qset
 
@@ -57,6 +58,8 @@ type QSet struct {
 	sync       chan bool
 	quit       chan bool
 
+	// QueueMax set the buffer size for set channel. Larger numbers will icnrease the risk of losing data in case of crash but will create larger buffers that normally improve set performance.
+	// When buffer is full, speed of each set will equal to speed of saving data in Redis.
 	QueueMax  int
 	setScript *redis.Script
 	psc       redis.PubSubConn
@@ -108,9 +111,12 @@ func (s *QSet) Init() {
 	}
 
 	s.set.Init()
-	go s.listenLoop()
 
+	listening := make(chan bool)
+	go s.listenLoop(listening)
+	<-listening
 	s.readMembers()
+
 	if s.QueueMax == 0 {
 		s.QueueMax = 100000
 	}
@@ -148,12 +154,12 @@ func (s *QSet) checkInitParams() bool {
 	return true
 }
 
-func (s *QSet) listenLoop() {
+func (s *QSet) listenLoop(listening chan bool) {
 	s.psc = redis.PubSubConn{Conn: s.ConnSub}
 	s.Lock()
 	s.psc.Subscribe(s.SetKey)
 	s.Unlock()
-
+	listening <- true
 	r := regexp.MustCompile(":")
 	for {
 		switch n := s.psc.Receive().(type) {
