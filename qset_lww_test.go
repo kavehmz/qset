@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/kavehmz/crdt/integrate"
+	"github.com/kavehmz/lww/integrate"
 )
 
 func TestQSet_integration(t *testing.T) {

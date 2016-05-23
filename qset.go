@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/kavehmz/crdt"
+	"github.com/kavehmz/lww"
 )
 
 /*QSet structure defines the structure connects to Redis and needs two connections one for read and write and one for subscribing to channel.
