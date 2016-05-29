@@ -1,6 +1,7 @@
 package qset
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"testing"
@@ -139,6 +140,47 @@ func TestQSet(t *testing.T) {
 		t.Error("List elements are not correct")
 	}
 	s.Sync()
+}
+
+type p struct {
+	Name string
+	Age  int
+}
+
+func TestQSet_strcuture(t *testing.T) {
+	var r0 *redis.Conn
+	var rs0 *redis.Conn
+	s0 := setupSet(t, r0, rs0, "TESTKEY")
+
+	var r1 *redis.Conn
+	var rs1 *redis.Conn
+	s1 := setupSet(t, r1, rs1, "TESTKEY")
+
+	s0.Marshal = func(e interface{}) string {
+		b, _ := json.Marshal(e.(p))
+		return string(b)
+	}
+	s0.UnMarshal = func(v string) interface{} {
+		var e p
+		json.Unmarshal([]byte(v), &e)
+		return e
+	}
+
+	s1.Marshal = s0.Marshal
+	s1.UnMarshal = s0.UnMarshal
+
+	a := p{"name", 20}
+	ts := time.Now().Round(time.Microsecond)
+	s0.Set(a, ts)
+	s0.Sync()
+	time.Sleep(time.Second)
+
+	// Not the s1 set should have the element in s0 set.
+	if e, ok := s1.Get(a); !ok || e != ts {
+		t.Error("Can't find  element added to set s0 in s1", ts, e, ok)
+	}
+
+	fmt.Println(s1.List())
 }
 
 func BenchmarkQSet_add_different_with_time_buffer_sync(b *testing.B) {

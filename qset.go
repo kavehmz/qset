@@ -166,7 +166,7 @@ func (s *QSet) listenLoop(listening chan bool) {
 		case redis.Message:
 			e := r.Split(string(n.Data), 2)
 			tms, _ := strconv.Atoi(e[0])
-			s.set.Set(s.Marshal(e[1]), time.Unix(int64(tms/1000000), int64(tms%1000000)))
+			s.set.Set(s.UnMarshal(e[1]), time.Unix(0, 0).Add(time.Duration(tms)*time.Microsecond))
 		case redis.Subscription:
 			if n.Count == 0 {
 				return
@@ -195,7 +195,7 @@ func (s *QSet) readMembers() {
 	s.checkErr(err)
 	for i := 0; i < len(zs); i += 2 {
 		n, _ := strconv.Atoi(zs[i+1])
-		s.set.Set(zs[i], time.Unix(0, 0).Add(time.Duration(n)*time.Microsecond))
+		s.set.Set(s.UnMarshal(zs[i]), time.Unix(0, 0).Add(time.Duration(n)*time.Microsecond))
 	}
 }
 
@@ -214,7 +214,7 @@ func (s *QSet) Sync() {
 
 //Set adds an element to the set if it does not exists. If it exists Set will update the provided timestamp. It also publishes the change into redis at SetKey channel.
 func (s *QSet) Set(e interface{}, t time.Time) {
-	s.set.Set(s.Marshal(e), t.Round(time.Microsecond))
+	s.set.Set(e, t.Round(time.Microsecond))
 	s.Add(1)
 	s.setChannel <- setData{ts: t.Round(time.Microsecond), element: e}
 }
@@ -233,7 +233,7 @@ func (s *QSet) Get(e interface{}) (time.Time, bool) {
 func (s *QSet) List() []interface{} {
 	var l []interface{}
 	for _, v := range s.set.List() {
-		l = append(l, s.UnMarshal(v.(string)))
+		l = append(l, v)
 	}
 	return l
 }
