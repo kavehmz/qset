@@ -179,8 +179,6 @@ func TestQSet_strcuture(t *testing.T) {
 	if e, ok := s1.Get(a); !ok || e != ts {
 		t.Error("Can't find  element added to set s0 in s1", ts, e, ok)
 	}
-
-	fmt.Println(s1.List())
 }
 
 func BenchmarkQSet_add_different_with_time_buffer_sync(b *testing.B) {
